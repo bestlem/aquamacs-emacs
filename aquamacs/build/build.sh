@@ -5,9 +5,12 @@
 # Exit if any command fails
 set -e
 
-# This exec command forces both stdin and stderr to a log file, so we
+#Prepare for Macports - their port files do not hard code /opt/local/
+INSTALL_PREFIX=/opt/local
+
+# # This exec command forces both stdin and stderr to a log file, so we
 # don't have to carefully log the output of every command.
-BUILD_LOG=build.log
+BUILD_LOG=${BUILD_DIR}/build.log
 exec &> >(tee ${BUILD_LOG})
 
 
@@ -15,16 +18,18 @@ exec &> >(tee ${BUILD_LOG})
 AQ_PERS_CONF=~/.aqbuildrc
 [ -f ${AQ_PERS_CONF} ] && source ${AQ_PERS_CONF}
 
+# mwb - no it doesn't
 # use Macports build of AUTOCONF
-AUTOTOOLS=$(dirname $0)/autotools
-export PATH=$AUTOTOOLS:$PATH
+#AUTOTOOLS=$(dirname $0)/autotools
+#export PATH=$AUTOTOOLS:$PATH
+
 
 OMIT_AUTOGEN=1
 FLAGS=
 OMIT_SYMB=1
 OLD_SDK=0
-TEXINFO=/usr/local/opt/texinfo/bin
-TEXPATH=/Library/TeX/texbin
+#TEXINFO=/usr/local/opt/texinfo/bin
+#TEXPATH=/Library/TeX/texbin
 
 # Xcoode has the libxml2 libraries if you ask it where they are.
 export LIBXML2_CFLAGS=`xml2-config --cflags`
@@ -45,7 +50,7 @@ case "$1" in
   ;;
 '-release')
   # Include /usr/local/bin/for finding homebrew libaries
-  PATH=$AUTOTOOLS:${TEXINFO}:${TEXPATH}:/usr/local/bin:/bin:/sbin:/usr/bin:/usr/sbin
+  PATH=$AUTOTOOLS:${TEXINFO}:${TEXPATH}:${PREFIX}/bin:/usr/local/bin:/bin:/sbin:/usr/bin:/usr/sbin
   export GZIP_PROG=`which gzip`
   echo "Building Aquamacs (release)."
   OMIT_AUTOGEN=
@@ -62,19 +67,19 @@ case "$1" in
   FLAGS="-arch x86_64 -O3 -g -mtune=corei7 $FLAGS"
   OMIT_SYMB=
   OLD_SDK=1
-  ;;
+;;
 *)
   # Include /usr/local/bin/for finding homebrew libaries
-  PATH=$AUTOTOOLS:${TEXINFO}:${TEXPATH}:/usr/local/bin:/bin:/sbin:/usr/bin:/usr/sbin
+  PATH=${PREFIX}/bin:/usr/local/bin:/bin:/sbin:/usr/bin:/usr/sbin
   # during development, do not compress .el files to speed up "make install"
   export GZIP_PROG=
   echo "Building Aquamacs (development, local architecture)."
   FLAGS="-O0 -g $FLAGS"
   if [ ! -e "configure" ];
   then
-    OMIT_AUTOGEN=
+  OMIT_AUTOGEN=
   fi
-  ;;
+    ;;
 esac
 echo "Compiler flags: $FLAGS"
 
@@ -82,53 +87,42 @@ echo "Compiler flags: $FLAGS"
 # do not use binaries either (e.g., gnutls would be recognized)
 
 # We will run only on 10.11 and later.
-MACOSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET:-"10.11"}
-export MACOSX_DEPLOYMENT_TARGET
+#MACOSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET:-"10.11"}
+#export MACOSX_DEPLOYMENT_TARGET
 
 FINALMESSAGE=""
 
-if test $OLD_SDK -gt 0;
-then
-# we're going to choose the oldest SDK we have (starting with 10.11)
-# this should guarantee backwards compatibility up to that SDK version.
-# for current Aquamacs, this will typically be 10.11
-for VERS in 10.11 10.12 10.13 10.14; do
-    SDK="/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX${VERS}.sdk"
-    if [ -d "$SDK" ]; then
-        FINALMESSAGE="This build will be compatible with OS X $VERS onwards."
-	SDKROOT=${SDKROOT:-"$SDK"}
-	break
-    fi
-done
-export SDKROOT
-else
-    FINALMESSAGE="Binary backwards compatibility not available."
-fi
 
 echo "PATH=" $PATH
-echo "SDKROOT=" $SDKROOT
-echo "MACOSX_DEPLOYMENT_TARGET=" $MACOSX_DEPLOYMENT_TARGET
+#echo "SDKROOT=" $SDKROOT
+#echo "MACOSX_DEPLOYMENT_TARGET=" $MACOSX_DEPLOYMENT_TARGET
 
 
 # Note: Setting MACOSX_DEPLOYMENT_TARGET is likely to be sufficient.
 
-COMPAT_CFLAGS="-Werror=partial-availability"
-COMPAT_LDFLAGS="-Wl,-no_weak_imports"
-COMPAT_LDFLAGS=
-DEPLOY="-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET"
-MAXVERS="-DMAC_OS_X_VERSION_MAX_ALLOWED=101100"
+#COMPAT_CFLAGS="-Werror=partial-availability"
+#COMPAT_LDFLAGS="-Wl,-no_weak_imports"
+#COMPAT_LDFLAGS=
+#DEPLOY="-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET"
+#MAXVERS="-DMAC_OS_X_VERSION_MAX_ALLOWED=101100"
 
 # autoconf must be run via macports to allow its upgrade
 
 # Use AQ_LOCAL_CONF_FLAGS environment variable to customize the
 # configure command for private builds
 
-# Exclude some libraries from homebrew use, at least for now
-BREW_EXCLUDE_FLAGS="--without-jpeg --without-rsvg"
+AQ_LOCAL_CONF_FLAGS=--without-makeinfo
 
-# XXX check these options: --without-xml2 --without-clock-gettime \
-test $OMIT_AUTOGEN || ./autogen.sh ; \
+# Exclude some libraries from homebrew use, at least for now
+#BREW_EXCLUDE_FLAGS="--without-jpeg --without-rsvg"
+# XXX check these options: --without-xml2 --without-clock-gettime
+test $OMIT_AUTOGEN || ../autogen.sh ; \
     ./configure --with-ns --without-x \
+                 --with-lcms2 \
+                 --without-harfbuzz \
+                 --without-imagemagick \
+                 --without-rsvg \
+                 --without-xaw3d \
                 ${AQ_LOCAL_CONF_FLAGS} \
                 ${BREW_EXCLUDE_FLAGS} \
                 CFLAGS="$FLAGS ${DEPLOY} ${MAXVERS} ${COMPAT_CFLAGS}" \
@@ -140,8 +134,8 @@ make clean || exit
 ## temporary:
 (cd etc/refcards; make; cd -)
 
-make -j4 all || exit
-make -j2 install || exit
+make -j8 all || exit
+make -j8 install || exit
 rm -f etc/DOC-*
 
 # generate symbol archive
@@ -149,9 +143,10 @@ test $OMIT_SYMB || dsymutil src/emacs
 
 echo ${FINALMESSAGE}
 echo "Build finished."
+
 if [[ "$AQUAMACS_CERT" != "" ]]; then
-    echo "Signing code with $AQUAMACS_CERT"
-    codesign -s "$AQUAMACS_CERT" --deep nextstep/Aquamacs.app
+echo "Signing code with $AQUAMACS_CERT"
+codesign -s "$AQUAMACS_CERT" --deep nextstep/Aquamacs.app
 else
     echo
     echo "IMPORTANT"
